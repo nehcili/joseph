@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class Node(object):
     """
-    Graph struction
+    Graph structure
     ===============
 
     `Node` class implements a directed acyclic graph (DAG) where each node is a task with certain time
