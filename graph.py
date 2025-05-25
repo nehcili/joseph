@@ -21,13 +21,13 @@ class Node(object):
     MCO is a NP problem. To reduce run time, we introduce a few heuristics to reduce the size of the graph. 
     In the mean time, certain tasks specific constraints are also added to the graph. In total, we have 3
     types of constraints and properties:
-    1. Task specifc Each node can be marked as a background tasksk. This allows another task to be run in parallel with the background task.
+    1. Task specifc: Each node can be marked as a background task. This allows another task to be run in parallel with the background task.
     2. Task specific/Mergeable: identical subgraphs can be merged into a single node. (Details below under `Mergeing` subsection).
     3. Contractable: a node can be marked as contractable. This means that the node can be contracted into a single node with other vertices. 
     (Details below under `Contracting` subsection).
 
     During impplementation. This graph is built from the vertices in 2 stages:
-    1. Merge all subgraphs which are equivalent (defined below) into a single node. 
+    1. Merge all subgraphs which are equivalent (defined below). 
     2. Contract all subgraphs whose vertices marked as `is_contractable` are to be contracted into a single node.
 
     After the graph is built, we run through all possible topological orderings of the graph and pick the ordering with least
