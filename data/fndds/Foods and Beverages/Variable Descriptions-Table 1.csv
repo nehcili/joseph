@@ -1,0 +1,6 @@
+Variable,Description,,,
+Food code,Unique 8-digit identification number,,,
+Main food description,Primary description for a food code,,,
+Additional food description,Description(s) associated with a food code/main description,,,
+WWEIA Category number,Unique 4-digit identification number,,,
+WWEIA Category description,Description for a WWEIA category,,,
