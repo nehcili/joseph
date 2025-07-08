@@ -1,6 +1,28 @@
 # Joseph
 
 ## Version 1
+### Goal
+1. No user interface is needed. All configs are to be inputed by hand in config files.
+2. There is generate.py file that can be run to email all the details to my email.
+3. Content of email
+    1. shopping list
+    2. recipe of each meal
+    2. total nutrient count and pie chart for contribution of each meal
+4. Repotoire of recipes to automatically rotate
+
+### Supports
+1. scaling/different serving of the same recipe
+    - The recipe may be 2 serving, but the serving size should be specified when building the graph
+2. auto collects all the ingredients
+
+### System 
+#### Recipe
+- Operations/steps are graph based. Each operation is a `Node` class.
+- Each recipe is an DA graph of nodes. Contain this with `Graph` class.
+- For version 1, each recipe is a `Graph` of a single `Node`.
+- A simple topological sort is implemented to get all the operations/steps together to string a recipe.
+
+## Initial ideas
 ### Data
 - Obtained from `https://www.ars.usda.gov/northeast-area/beltsville-md-bhnrc/beltsville-human-nutrition-research-center/food-surveys-research-group/docs/fndds-download-databases/`
 - Food and Beverage: just a file with descriptions of what the food and beverage is

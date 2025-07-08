@@ -65,9 +65,8 @@ class Node(object):
     needs to specify output type.
     """
     def __init__(self):
-        self._children = None
-        self._parents = None
-
+        self._children: tuple = None
+        self._parents: set = None
 
     @property
     @abstractmethod
@@ -102,19 +101,26 @@ class Node(object):
         Hash is dynamically computed, since graph might change.
         """
 
-    def forward(self, *args, **kwargs) -> Any:
+    @property
+    def children(self) -> tuple:
         """
-        Does the actual computation of the node. This method is called when the graph is built.
-        Computation doesn't require MCO ordering.
+        Note that we return children without copying. So any manipulation will change the actual children of the node
         """
-        pass
+        return self._children
+    
+    @property
+    def parents(self) -> set:
+        """
+        Note that we return parents withouyt copying. So any manipulation will change the actual parents of the node
+        """
+        return set(self._parents)
 
     def __call__(self, *args, **kwargs) -> "Node":
         """
         Call this method to set the children of the node. The output of the children will be passed to the forward method of the node,
         in the order of the arguments of takes. No recursive args/kwargs will be allowed.
 
-        We don't 
+        We automatically populate parent of all the child nodes here.
 
         args/kwargs can be one of
         - Node
@@ -131,12 +137,17 @@ class Node(object):
         for arg in args:
             if isinstance(arg, Node):
                 _args.append(arg)
+                arg._parents.add(self)
             elif isinstance(arg, (list, tuple)):
                 assert all(isinstance(i, Node) for i in arg), _invalid_msg
                 _args.append(arg)
+                for node in arg:
+                    node._parent.add(self)
             elif isinstance(arg, dict):
                 assert all(isinstance(i, Node) for i in arg.values()), _invalid_msg
                 _args.append(arg)
+                for node in arg.values():
+                    node._parent.add(self)
             else:
                 raise ValueError(_invalid_msg)
             
@@ -144,28 +155,65 @@ class Node(object):
         for key, value in kwargs.items():
             if isinstance(value, Node):
                 _kwargs[key] = value
+                value._parents.add(self)
             elif isinstance(value, (list, tuple)):
                 assert all(isinstance(i, Node) for i in value), _invalid_msg
                 _kwargs[key] = value
+                for node in value:
+                    node._parents.add(self)
             elif isinstance(value, dict):
                 assert all(isinstance(i, Node) for i in value.values()), _invalid_msg
                 _kwargs[key] = value
+                for node in value.values():
+                    node._parents.add(self)
             else:
                 raise ValueError(_invalid_msg)
             
         self._children = (_args, _kwargs)
 
         return self
+    
+    def _forward(self) -> Any:
+        # if a node is a leaf.
+        if self._children is None:
+            return self.forward()
+
+        # compute recursively all non leaf nodes.
+        args = []
+        kwargs = {}
+
+        _invalid_msg = "Invalid argument type. Expected Node or list/tuple/dict of Nodes."
+
+        args_children, kwargs_children = self._children
+        for value in args_children:
+            if isinstance(value, Node):
+                args.append(value._forward())
+            elif isinstance(value, (list, tuple)):
+                args.append([node._forward() for node in value])
+            elif isinstance(value, dict):
+                args.append({k: node._forward() for k, node in value.items()})
+            else:
+                raise ValueError(_invalid_msg)
+        
+        for key, value in kwargs_children.items():
+            if isinstance(value, Node):
+                kwargs[key] = value._forward()
+            elif isinstance(value, (list, tuple)):
+                kwargs[key] = [node._forward() for node in value]
+            elif isinstance(value, dict):
+                kwargs[key] = {k: node._forward() for k, node in value.items()}
+            else:
+                raise ValueError(_invalid_msg)
+    
+        return self.forward(*args, **kwargs)
 
 
-    def get_children(self) -> list:
+    ######################################
+    # public methods to use/overwrite
+    ######################################
+    def forward(self, *args, **kwargs) -> Any:
         """
-        Get the children of the node. The children are the nodes that depend on this node.
+        Does the actual computation of the node. This method is called when the graph is built.
+        Computation doesn't require MCO ordering.
         """
         pass
-
-
-    
-
-    
-
