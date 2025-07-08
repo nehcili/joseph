@@ -4,11 +4,12 @@
 ### Goal
 1. No user interface is needed. All configs are to be inputed by hand in config files.
 2. There is generate.py file that can be run to email all the details to my email.
-3. Content of email
-    1. shopping list
-    2. recipe of each meal
-    2. total nutrient count and pie chart for contribution of each meal
-4. Repotoire of recipes to automatically rotate
+3. Content of email:
+    1. shopping list,
+    2. recipe of each meal,
+    2. total nutrient count and pie chart for contribution of each meal.
+4. Repotoire of recipes to automatically rotate.
+5. All units are in grams at room temperature.
 
 ### Supports
 1. scaling/different serving of the same recipe

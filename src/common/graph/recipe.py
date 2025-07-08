@@ -193,16 +193,19 @@ class Recipe(Graph):
         """
         if not self.is_calibrated:
             logger.info(f"Calibrating recipe graph for {self.name}.")
-            root: Node = self.graph()
+            root: Node = self()
             assert isinstance(root, Node), "The output of a recipe graph must be a single Node."
             scale = 1.0 / root.forward(1)['output'].quantity
             root.backward(scale=scale)
             logger.info(f"Recipe graph {self.name} calibrated with scale {scale}.")
+
             self._is_calibrated = True
+            self._graph_cache = root
     
-    def _graph(self):
+    def __call__(self):
         self._calibrate()
-        return super()._graph()
+        return super().__call__()
+            
 
 
 

@@ -1,6 +1,7 @@
+from abc import abstractmethod
 from copy import deepcopy
 import logging
-from typing import Any
+from typing import Any, Dict, Union
 
 from src.utils import get_all_args
 
@@ -25,9 +26,9 @@ class Node(object):
         - You can provide func to backward method, which will be used for reverse computation. Default is `self._backward`.
         - `_state` is a protected keyword of kwargs. Do not populate it in backward's kwargs.
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
+        super().__init__()
         self._children: tuple = None
-        self._data: dict = self._set_data(*args, **kwargs)
 
     @property
     def children(self) -> tuple:
@@ -98,7 +99,7 @@ class Node(object):
         """
         pass
     
-    def _backward(self, *args, **kwargs) -> dict:
+    def _backward(self, *args, depth=0, parent=None, _state=None, **kwargs) -> dict:
         """
         Parameters
         ===========
@@ -115,30 +116,24 @@ class Node(object):
         - scaling each node (for different servings)
         - building recipe
         """
-        return {}
-
-    def _set_data(self, *args, **kwargs):
-        return get_all_args()
+        return None
 
     ######################################
     # public methods to use
     ######################################
-    def forward(self, *args, func=None, **kwargs) -> Any:
+    def forward(self, *args, **kwargs) -> Any:
         """
         Computes the tree from leaves up to the root.
 
         How it works
         =============
         - *args and **kwargs are passed to the leaf nodes. They are not used by the non-leaf nodes.
-        - outputs of children are input into current node's func or self._forward method.
-        - If a `func` keyword argument is passed, it will be used as the function to call on the inputs of the node.
+        - outputs of children are input into current node's _forward method.
         """
-        if func is None:
-            func = self._forward
 
         # if a node is a leaf.
         if self.children is None:
-            return func(*args, **kwargs)
+            return self._forward(*args, **kwargs)
 
         # compute recursively all non leaf nodes.
         args = []
@@ -146,88 +141,99 @@ class Node(object):
 
         _invalid_msg = "Invalid argument type. Expected Node or list/tuple/dict of Nodes."
 
-        args_children, kwargs_children = self.children  # Thesea are the children of the node, which are Nodes or lists/tuples/dicts of Nodes.
+        args_children, kwargs_children = self.children  # These are the children of the node, which are Nodes or lists/tuples/dicts of Nodes.
         input_args, input_kwargs = [], {}  # These are the output of the children.
         for value in args_children:
             if isinstance(value, Node):
-                input_args.append(value.forward(*args, func=func, **kwargs))
+                input_args.append(value.forward(*args, **kwargs))
             elif isinstance(value, (list, tuple)):
-                input_args.append([node.forward(*args, func=func, **kwargs) for node in value])
+                input_args.append([node.forward(*args, **kwargs) for node in value])
             elif isinstance(value, dict):
-                input_args.append({k: node.forward(*args, func=func, **kwargs) for k, node in value.items()})
+                input_args.append({k: node.forward(*args, **kwargs) for k, node in value.items()})
             else:
                 raise ValueError(_invalid_msg)
         
         for key, value in kwargs_children.items():
             if isinstance(value, Node):
-                input_kwargs[key] = value.forward(*args, func=func, **kwargs)
+                input_kwargs[key] = value.forward(*args, **kwargs)
             elif isinstance(value, (list, tuple)):
-                input_kwargs[key] = [node.forward(*args, func=func, **kwargs) for node in value]
+                input_kwargs[key] = [node.forward(*args, **kwargs) for node in value]
             elif isinstance(value, dict):
-                input_kwargs[key] = {k: node.forward(*args, func=func, **kwargs) for k, node in value.items()}
+                input_kwargs[key] = {k: node.forward(*args, **kwargs) for k, node in value.items()}
             else:
                 raise ValueError(_invalid_msg)
 
-        return func(*input_args, **input_kwargs)
+        return self._forward(*input_args, **input_kwargs)
 
-    def backward(self, *args, depth=0, parent=None, func=None, _state=None, **kwargs) -> "Node":
+    def backward(self, *args, depth=0, parent=None, _state=None, **kwargs) -> "Node":
         """
         Computes the tree from root down to the leaves.
 
         Specification
         ===========
-        `_state` is a protected keyward of kwargs. Do no populate it.
-        this state can be mutated by any method of this Node. But a new copy (of possibly processed `_state`) must be passed to the children nodes.
+        `_state` is a protected keyword of kwargs. Do not populate it.
+        this state can be mutated by any method of this Node (including _backward). But a new copy (of possibly processed `_state`) must be passed to the children nodes.
         """
         # if is root node, we need to build the state.
         if _state is None:
             _state = {}
-        if func is None:
-            func = self._backward
 
         # if a node is a leaf.
         if self.children is None:
-            func(*args, _state=_state, **kwargs)
+            self._backward(*args, depth=depth, parent=parent, _state=_state, **kwargs)
             return self
 
         # build this Node
-        depth = _state['depth']
-        _state = func(*args, **kwargs)
+        _state = self._backward(*args, depth=depth, parent=parent, _state=_state, **kwargs)
 
         # recursively build all children nodes.
         args_children, kwargs_children = self.children
         for child in args_children:
-            cur_state = deepcopy.copy(_state)
-            cur_state.update({
-                'parent': self,           # update parent state
-                'depth': depth + 1,       # increase depth
-            })
-            child.backward(*args, _state=cur_state, func=func, **kwargs)
+            cur_state = deepcopy(_state)
+            child.backward(*args, depth=depth, parent=parent, _state=cur_state, **kwargs)
         
         for _, child in kwargs_children.items():
-            cur_state = deepcopy.copy(_state)  # copy state for each child
-            cur_state.update({
-                'parent': self,           # update parent state
-                'depth': depth + 1,       # increase depth
-            })
-            child.backward(*args, _state=cur_state, func=func, **kwargs)
+            cur_state = deepcopy(_state)
+            child.backward(*args, depth=depth, parent=parent, _state=cur_state, **kwargs)
 
         return self
 
 
 class Graph(object):
     def __init__(self):
-        self.root: Node = None
-        self._data = self.set_data()
+        super().__init__()
+        """
+        The root of the graph is uniquely determined by args and kwargs. So we cache the result
+        """
+        self._graph_cache = None
+        self._graph_cache_args = None
+        self._graph_cache_kwargs = None
 
-    @property
-    def data(self) -> dict:
-        return self._data
+    def __call__(self, *args, **kwargs) -> Dict[str, "Node"]:
+        # Cache the result so __call__ and direct _graph() return the same object
+        if (
+            self._graph_cache is not None
+            and self._graph_cache_args == args
+            and self._graph_cache_kwargs == kwargs
+        ):
+            return self._graph_cache
+        result = self.graph(*args, **kwargs)
+        if isinstance(result, Node):
+            result = {"default": result}
+        elif isinstance(result, dict):
+            pass
+        else:
+            raise ValueError("graph() must return a Node or dict of Nodes")
+        self._graph_cache = result
+        self._graph_cache_args = args
+        self._graph_cache_kwargs = kwargs
+        return result
 
-    def set_data() -> Any:
-        return {}
-
-    def graph(self, *args, **kwargs) -> "Graph":
+    #######################################
+    # Override these methods
+    #######################################
+    @abstractmethod
+    def graph(self, *args, **kwargs) -> Union["Node", Dict[str, "Node"]]:
         """
         Use the grpah method to build DAG.
 
@@ -241,10 +247,3 @@ class Graph(object):
         return x
         """
         pass
-
-    def __call__(self, *args, **kwargs):
-        self.root = self.graph(*args, **kwargs)
-        return self.root
-
-
-class Recipe(Graph):
