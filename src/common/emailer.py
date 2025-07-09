@@ -1,5 +1,4 @@
 import smtplib
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Union
 
@@ -37,23 +36,3 @@ def send_email(
     with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
         server.login(from_addr, password)
         server.sendmail(from_addr, to_addrs, msg.as_string())
-
-
-if __name__ == "__main__":
-    content = """
-<html>
-<body>
-    <p>Cute laopo is so cute.</p>
-</body>
-</html>
-"""
-
-    # Example usage
-    send_email(
-        subject="Test Email",
-        from_addr="cookingjoseph899@gmail.com",
-        to_addrs=["gracewong1220@gmail.com"],
-        content=content,
-        html=True,
-        password="shyy qmxv fpxx usvq"
-    )
