@@ -1,6 +1,4 @@
 import pytest
-from types import SimpleNamespace
-import sys
 from unittest.mock import patch
 from src.common.graph.base import Node
 from src.common.graph.base import Graph, Node

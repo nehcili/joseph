@@ -1,0 +1,19 @@
+name: joseph
+channels:
+  - defaults
+  - bioconda
+  - conda-forge
+  - pytorch
+dependencies:
+  - python==3.12*
+  - jupyterlab
+  - polars
+  - pandas
+  - numpy
+  - xarray
+  - matplotlib
+  - plotly
+  - altair  # for polars plotting
+  - rich
+  - vl-convert-python  # for altair to save to png etc
+  - pytest
