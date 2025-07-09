@@ -2,7 +2,7 @@ import shutil
 import tempfile
 import pytest
 import polars as pl
-from common.data.base_api import CachedDataAPI, LazyPolarDataAPI
+from src.common.data.base_api import CachedDataAPI, LazyPolarDataAPI
 
 class DummyAPI(CachedDataAPI):
     def _setup_source(self, source_path, *args, **kwargs):
@@ -60,8 +60,8 @@ def test_get_param_and_history(temp_db_dir):
     api = DummyAPI(temp_db_dir)
     api.setup(foo=1)
     api.setup(foo=2)
-    assert api.get_param(1)["kwargs"]["foo"] == 1
-    assert api.get_param(2)["kwargs"]["foo"] == 2
+    assert api.get_param(0)["kwargs"]["foo"] == 1
+    assert api.get_param(1)["kwargs"]["foo"] == 2
     history = api.get_history()
     assert len(history) == 2
     assert history[0]["kwargs"]["foo"] == 1

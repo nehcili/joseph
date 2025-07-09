@@ -93,7 +93,7 @@ class CachedDataAPI(BaseDataAPI):
     def get_history(self) -> List[Dict[str, Any]]:
         return self.meta["params"]
     
-    def get(self, *args, version=None, **kwargs) -> Dict[str, pl.LazyFrameDataFrame]:
+    def get(self, *args, version=None, **kwargs) -> Dict[str, pl.LazyFrame]:
         """
         Fetch data for a specific version (default: current version).
         """
