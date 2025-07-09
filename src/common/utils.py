@@ -194,16 +194,3 @@ def run_and_save_notebook_with_args(
         f.write(body)
 
     return output_nb_path, output_html_path
-
-if __name__ == "__main__":
-    run_and_save_notebook_with_args(
-        input_path='/Users/lichen/code/projects/joseph/.notebooks/scratches/scratch_v1.ipynb',
-        output_folder='/Users/lichen/code/projects/joseph/.notebooks/outputs/',
-        inject_args={
-            'example_arg': 'example_value',
-            'example_int': 42,
-            'example_list': [1, 2, 3],
-            'example_dict': {'key1': 'value1', 'key2': 'value2'}
-        },
-        remove_input=True
-    )
