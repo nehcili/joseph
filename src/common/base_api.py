@@ -55,10 +55,16 @@ class CachedDataAPI(BaseDataAPI):
     def setup(self, *args, **kwargs):
         os.makedirs(self.source_path, exist_ok=True)
         os.makedirs(self.data_path, exist_ok=True)
+
+        source_data_peek = self._peek_source(*args, **kwargs)
+        assert not (set(source_data_peek.keys()) & set(kwargs.keys())), "source_data_peek and kwargs have overlapping keys"
+        kwargs.update(source_data_peek)
+
         args_hash = self._hash_args(args, kwargs)
         if self.meta["history"] and self.meta["history"][-1] == args_hash:
             # Same args as last time, do nothing
             return
+        
         # Version up
         self.meta["version"] += 1
         self.meta["history"].append(args_hash)
@@ -111,6 +117,16 @@ class CachedDataAPI(BaseDataAPI):
         raise NotImplementedError(
             "This method should be implemented in the subclass to return actual data."
         )
+    
+    def _peek_source(self, *args, **kwargs) -> Dict[str, Any]:
+        """
+        Peek at the source data without modifying it.
+        This method should return a dictionary with some lazy information about the source data
+        for caching purposes.
+
+        NOTE: output must be json serializable.
+        """
+        raise NotImplementedError("This method should be implemented in the subclass.")
 
     def _setup_source(self, source_path: Path, *args, **kwargs):
         raise NotImplementedError
@@ -118,7 +134,7 @@ class CachedDataAPI(BaseDataAPI):
     def _setup_data(self, source_path: Path, *args, **kwargs) -> Dict[str, pl.DataFrame]:
         raise NotImplementedError
     
-class LazyPolarDataAPI(CachedDataAPI):
+class LazyPolarsDataAPI(CachedDataAPI):
     def _get(self, data_path=None) -> Dict[str, pl.LazyFrame]:
         data = {}
         for file in data_path.glob("*.parquet"):

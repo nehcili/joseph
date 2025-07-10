@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
-from src.common.graph.base import Node
-from src.common.graph.base import Graph, Node
+from src.common.base_graph import Node
+from src.common.base_graph import Graph, Node
 
 # Patch get_all_args for testing since it's imported in Node
 
@@ -43,11 +43,6 @@ class DummyNode(Node):
         state['depth'] = depth
         state['parent'] = parent
         return state
-
-@pytest.fixture(autouse=True)
-def patch_get_all_args():
-    with patch("src.common.graph.base.get_all_args", dummy_get_all_args):
-        yield
 
 def test_node_call_sets_children():
     n1 = DummyNode(1)
