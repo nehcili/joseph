@@ -1,146 +1,191 @@
 import shutil
 import tempfile
 import pytest
-import polars as pl
-from src.common.base_api import CachedDataAPI, LazyPolarsDataAPI
+from pathlib import Path
+from src.common.base_api import CachedDataAPI
 
-class DummyAPI(CachedDataAPI):
-    def __init__(self, db_dir):
-        super().__init__(database_path=db_dir)
+class DummyCachedDataAPI(CachedDataAPI):
+    def __init__(self, database_path):
+        super().__init__(database_path)
         self.counter = 0
 
-    def _setup_source(self, source_path, *args, **kwargs):
-        # No-op for testing
-        pass
-
-    def _setup_data(self, source_path, *args, **kwargs):
-        # Return a dict of polars DataFrames
-        df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-        df2 = pl.DataFrame({"x": [10, 20]})
-        return {"table1": df1, "table2": df2}
-
-    def _get(self, data_path=None):
-        # Read all parquet files in data_path
-        data = {}
-        for file in data_path.glob("*.parquet"):
-            name = file.stem
-            data[name] = pl.read_parquet(file)
-        return data
-    
     def update(self):
         self.counter += 1
 
     def _peek_source(self, *args, **kwargs):
-        # Return a preview of the data for testing
-        return {"table1": f"preview of table1={self.counter}", "table2": f"preview of table2={self.counter}"}
+        # Just return a dummy dict based on args for testing
+        return {"counter": self.counter}
+
+    def _setup_source(self, dist_folder: Path, peeked_sources, *args, **kwargs):
+        counter = peeked_sources['counter']
+
+        # Simulate saving a source file
+        file_path = dist_folder / f"source_{counter}.txt"
+        file_path.write_text(f"source data {counter}")
+        return {"source": str(file_path)}
+
+    def _setup_data(self, dist_folder: Path, source_paths, *args, **kwargs):
+        # Read the file from peeked_sources['dummy']
+        dummy_file_path = Path(source_paths['source'])
+        counter = dummy_file_path.read_text().split(' ')[-1]
+        
+        # Simulate saving a derived file
+        file_path = dist_folder / f"derived_{counter}.txt"
+        file_path.write_text(f"derived data {counter}")
+        return {"derived": str(file_path)}
+
+    def _get(self, *args, data_paths=None, **kwargs):
+        # Return the contents of the derived file
+        with open(data_paths["derived"], "r") as f:
+            return {"derived": f.read().split(' ')[-1]}
+        
 
 @pytest.fixture
-def temp_db_dir():
-    d = tempfile.mkdtemp()
-    yield d
-    shutil.rmtree(d)
+def temp_db():
+    temp_dir = tempfile.mkdtemp()
+    db_path = Path(temp_dir) / "test_db"
+    yield db_path
+    shutil.rmtree(temp_dir)
 
-def test_setup_and_get_creates_and_reads_data(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    api.setup(foo=1)
-    version = api.get_version()
-    assert version == 0
-    data = api.get()
-    assert "table1" in data and "table2" in data
-    assert isinstance(data["table1"], pl.DataFrame)
-    assert data["table1"].shape == (2, 2)
-    assert data["table2"].shape == (2, 1)
 
-def test_setup_idempotent(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    api.setup(foo=1)
-    v1 = api.get_version()
-    api.setup(foo=1)
-    v2 = api.get_version()
-    assert v1 == v2  # No new version if args are the same
+def test_meta_populated_correctly(temp_db):
+    db = DummyCachedDataAPI(temp_db)
+    db.setup("foo", bar=1)
+    meta = db.meta
 
-def test_setup_new_version_on_args_change(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    api.setup(foo=1)
-    v1 = api.get_version()
-    api.setup(foo=2)
-    v2 = api.get_version()
-    assert v2 == v1 + 1
+    # Check all required meta keys exist
+    for key in db.META_KEYS:
+        assert key in meta
 
-def test_updated_setup(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    api.setup(foo=1)
-    assert api.counter == 0  # Counter should increment on setup
-    assert api.get_version() == 0  # Version should be 0 after first setup
+    # Check hashes and args are populated
+    assert len(meta["hashes"]) == 1
+    assert len(meta["args"]) == 1
+    assert isinstance(meta["hashes"][0], str)
+    assert isinstance(meta["args"][0], dict)
+    assert meta["args"][0]["args"] == ("foo",)
+    assert meta["args"][0]["kwargs"] == {"bar": 1}
+    assert isinstance(meta["args"][0]["peeked_source"], dict)
 
-    api.update()  # Simulate an update
-    assert api.counter == 1  # Counter should increment again
-    assert api.get_version() == 0  # Version should still be 0
+    # Check source_data_paths and derived_data_paths are populated
+    assert len(meta["source_data_paths"]) == 1
+    assert len(meta["derived_data_paths"]) == 1
+    assert "source" in meta["source_data_paths"][0]
+    assert "derived" in meta["derived_data_paths"][0]
+    assert Path(meta["source_data_paths"][0]["source"]).exists()
+    assert Path(meta["derived_data_paths"][0]["derived"]).exists()
 
-    api.setup(foo=1)
-    assert api.counter == 1  # Counter should increment again
-    assert api.get_version() == 1  # Version should still be 0
-    
-    api.setup(foo=2)
-    assert api.get_version() == 2  # New version created
 
-    api.setup(foo=3)
-    assert api.get_version() == 3  # New version created
+def test_meta_history_on_update_and_different_args(temp_db):
+    db = DummyCachedDataAPI(temp_db)
+    # Initial setup
+    db.setup("foo", bar=1)
+    meta1 = db.meta.copy()
+    assert len(meta1["hashes"]) == 1
+    assert meta1["args"][0]["args"] == ("foo",)
+    assert meta1["args"][0]["kwargs"] == {"bar": 1}
+    first_hash = meta1["hashes"][0]
 
-    api.setup(foo=3)
-    assert api.get_version() == 3  # No new version if args are the same
+    # Call setup() again with same args (should NOT add new version)
+    db.setup("foo", bar=1)
+    meta2 = db.meta.copy()
+    assert meta2 == meta1  # No new version added
 
-    api.update()  # Simulate another update
-    assert api.counter == 2  # Counter should increment again
+    # Call update() to change internal state, then setup() again (should add new version)
+    db.update()
+    db.setup("foo", bar=1)
+    meta3 = db.meta.copy()
+    assert len(meta3["hashes"]) == 2
+    assert meta3["hashes"][0] == first_hash
+    assert meta3["args"][1]["args"] == ("foo",)
+    assert meta3["args"][1]["kwargs"] == {"bar": 1}
+    # The peeked_source should reflect the updated counter
+    assert meta3["args"][1]["peeked_source"]["counter"] == 1
+    # Source and derived data paths should be different for the new version
+    assert meta3["source_data_paths"][0] != meta3["source_data_paths"][1]
+    assert meta3["derived_data_paths"][0] != meta3["derived_data_paths"][1]
+    # Files for both versions should exist
+    assert Path(meta3["source_data_paths"][0]["source"]).exists()
+    assert Path(meta3["source_data_paths"][1]["source"]).exists()
+    assert Path(meta3["derived_data_paths"][0]["derived"]).exists()
+    assert Path(meta3["derived_data_paths"][1]["derived"]).exists()
+    # The derived file contents should match the counter
+    with open(meta3["derived_data_paths"][0]["derived"]) as f0, open(meta3["derived_data_paths"][1]["derived"]) as f1:
+        assert f0.read().strip() == "derived data 0"
+        assert f1.read().strip() == "derived data 1"
+    # The hashes should be different for the two versions
+    assert meta3["hashes"][0] != meta3["hashes"][1]
 
-    api.setup(foo=3)
-    assert api.get_version() == 4  # New version created
+    # Call update() and setup() with different args/kwargs (should add another version)
+    db.update()
+    db.setup("bar", baz=2)
+    meta4 = db.meta.copy()
+    assert len(meta4["hashes"]) == 3
+    # The new args/kwargs should be reflected in the last entry
+    assert meta4["args"][2]["args"] == ("bar",)
+    assert meta4["args"][2]["kwargs"] == {"baz": 2}
+    # The peeked_source should reflect the updated counter
+    assert meta4["args"][2]["peeked_source"]["counter"] == 2
+    # Source and derived data paths should be different for the new version
+    assert meta4["source_data_paths"][2] != meta4["source_data_paths"][1]
+    assert meta4["derived_data_paths"][2] != meta4["derived_data_paths"][1]
+    # Files for all versions should exist
+    assert Path(meta4["source_data_paths"][2]["source"]).exists()
+    assert Path(meta4["derived_data_paths"][2]["derived"]).exists()
+    # The derived file contents should match the counter
+    with open(meta4["derived_data_paths"][2]["derived"]) as f2:
+        assert f2.read().strip() == "derived data 2"
+    # The hashes should all be unique
+    assert len(set(meta4["hashes"])) == 3
 
-def test_get_param_and_history(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    api.setup(foo=1)
-    api.setup(foo=2)
-    assert api.get_param(0)["kwargs"]["foo"] == 1
-    assert api.get_param(1)["kwargs"]["foo"] == 2
-    history = api.get_history()
-    assert len(history) == 2
-    assert history[0]["kwargs"]["foo"] == 1
-    assert history[1]["kwargs"]["foo"] == 2
+    # Call setup() with yet another set of args/kwargs
+    db.setup("baz", qux=3)
+    meta5 = db.meta.copy()
+    assert len(meta5["hashes"]) == 4
+    # The new args/kwargs should be reflected in the last entry
+    assert meta5["args"][3]["args"] == ("baz",)
+    assert meta5["args"][3]["kwargs"] == {"qux": 3}
+    # The peeked_source should reflect the updated counter
+    assert meta5["args"][3]["peeked_source"]["counter"] == 2  # counter not incremented since update() wasn't called
+    # Source and derived data paths should be different for the new version
+    assert meta5["source_data_paths"][3] != meta5["source_data_paths"][2]
+    assert meta5["derived_data_paths"][3] != meta5["derived_data_paths"][2]
+    # Files for all versions should exist
+    assert Path(meta5["source_data_paths"][3]["source"]).exists()
+    assert Path(meta5["derived_data_paths"][3]["derived"]).exists()
+    # The derived file contents should match the counter
+    with open(meta5["derived_data_paths"][3]["derived"]) as f3:
+        assert f3.read().strip() == "derived data 2"
+    # The hashes should all be unique
+    assert len(set(meta5["hashes"])) == 4
 
-def test_get_raises_for_missing_version(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    api.setup(foo=1)
-    with pytest.raises(FileNotFoundError):
-        api.get(version=1)  # must call setup first
 
-def test_peek_source_returns_preview(temp_db_dir):
-    api = DummyAPI(temp_db_dir)
-    preview = api._peek_source(temp_db_dir)
-    assert "table1" in preview and "table2" in preview
-    assert preview["table1"] == "preview of table1=0"
-    assert preview["table2"] == "preview of table2=0"
+def test_get_returns_correct_data_for_each_version(temp_db):
+    db = DummyCachedDataAPI(temp_db)
+    # Initial setup
+    db.setup("foo", bar=1)
+    # Should return the derived value for counter=0
+    result_v0 = db.get()
+    assert result_v0 == {"derived": "0"}
 
-def test_lazy_polar_data_api_reads_lazyframes(temp_db_dir):
-    class DummyLazy(LazyPolarsDataAPI):
-        def _setup_source(self, source_path, *args, **kwargs):
-            pass
-        def _setup_data(self, source_path, *args, **kwargs):
-            df = pl.DataFrame({"a": [1, 2]})
-            return {"lazy": df}
-        def _peek_source(self, *args, **kwargs):
-            return {"lazy": "preview of lazy"}
+    # Call update() and setup() again (should add new version)
+    db.update()
+    db.setup("foo", bar=1)
+    # Should return the derived value for counter=1 (latest version)
+    result_v1 = db.get()
+    assert result_v1 == {"derived": "1"}
 
-    api = DummyLazy(temp_db_dir)
-    api.setup()
-    data = api.get()
-    assert "lazy" in data
-    assert isinstance(data["lazy"], pl.LazyFrame)
-    # Collect to verify data
-    df = data["lazy"].collect()
-    assert df.shape == (2, 1)
-    assert df["a"].to_list() == [1, 2]
+    # Should also be able to get previous version by version index
+    result_v0_again = db.get(version=0)
+    assert result_v0_again == {"derived": "0"}
+    result_v1_again = db.get(version=1)
+    assert result_v1_again == {"derived": "1"}
 
-    # Test _peek_source for LazyPolarsDataAPI
-    preview = api._peek_source(temp_db_dir)
-    assert "lazy" in preview
-    assert preview["lazy"] == "preview of lazy"
+    # If we call setup with new args, should get new version
+    db.update()
+    db.setup("bar", baz=2)
+    result_v2 = db.get()
+    assert result_v2 == {"derived": "2"}
+    # Check all versions
+    assert db.get(version=0) == {"derived": "0"}
+    assert db.get(version=1) == {"derived": "1"}
+    assert db.get(version=2) == {"derived": "2"}

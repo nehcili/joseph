@@ -7,6 +7,10 @@ from nbconvert import HTMLExporter
 import os
 from nbconvert.preprocessors import ExecutePreprocessor
 from datetime import datetime
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_all_args(include_implicit_args: bool = False) -> dict:
@@ -194,3 +198,18 @@ def run_and_save_notebook_with_args(
         f.write(body)
 
     return output_nb_path, output_html_path
+
+
+def download_file(url, filename):
+    """Downloads a single file from a given URL."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        with open(filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logger.info(f"Downloaded: {filename}")
+        return filename
+    except requests.exceptions.RequestException as e:
+        logger.info(f"Error downloading {url}: {e}")
+        return None
