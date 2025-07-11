@@ -5,8 +5,10 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List
+import logging
 
-import polars as pl
+logger = logging.getLogger(__name__)
+
 
 class BaseDataAPI(ABC):
     @abstractmethod
@@ -106,8 +108,10 @@ class CachedDataAPI(BaseDataAPI):
         data_paths = self.get_derived_data_paths(version)
         return self._get(*args, data_paths=data_paths, **kwargs)
     
-
-    def setup(self, *args, **kwargs):
+    def is_setup(self) -> bool:
+        return self.get_version() >= 0
+    
+    def setup(self, *args, force_update=False, **kwargs):
         """
         Essentiall does the following:
         1. Creates the database folder if it doesn't exist.
@@ -117,6 +121,11 @@ class CachedDataAPI(BaseDataAPI):
         5. Creates versioned folders for source and data.
         6. Calls user-defined methods to set up source and data.
         7. Saves the meta information.
+
+        Note
+        ====
+        - Do no call this method as a check to see if the database is initialized. Logger will spew out
+            too much information. Use `is_setup()` instead.
         """
         os.makedirs(self.source_path, exist_ok=True)
         os.makedirs(self.data_path, exist_ok=True)
@@ -124,9 +133,17 @@ class CachedDataAPI(BaseDataAPI):
         peeked_source_dict = self._peek_source(*args, **kwargs)
         args_hash = self._hash_args(args, kwargs, peeked_source_dict)
 
-        if len(self.meta["hashes"]) > 0 and self.meta["hashes"][-1] == args_hash:
+        if not force_update and len(self.meta["hashes"]) > 0 and self.meta["hashes"][-1] == args_hash:
             # Same args as last time, do nothing
+            logger.info("No version update detected. Using cached data.")
             return
+        
+        if force_update:
+            logger.info("Force update is enabled. Incrementing version regardless of args.")
+        elif self.get_version() >= 0:
+            logger.info("New args or source change detected. Incrementing version.")
+        else:
+            logger.info("No previous version found. Initializing versioning.")
         
         # Version up
         self.meta["hashes"].append(args_hash)
@@ -134,22 +151,27 @@ class CachedDataAPI(BaseDataAPI):
 
         # Prepare versioned folders
         version_str = f"v{self.get_version()}"
-        source_dist_folder = self.source_path / version_str
-        data_dist_folder = self.data_path / version_str
-        os.makedirs(source_dist_folder, exist_ok=True)
-        os.makedirs(data_dist_folder, exist_ok=True)
+        source_dest_folder = self.source_path / version_str
+        data_dest_folder = self.data_path / version_str
+        os.makedirs(source_dest_folder, exist_ok=True)
+        os.makedirs(data_dest_folder, exist_ok=True)
 
         # User-defined source setup
-        source_data_paths = self._setup_source(source_dist_folder, peeked_source_dict, *args, **kwargs)
+        logger.info(f"Setting up source data in {source_dest_folder}")
+        source_data_paths = self._setup_source(source_dest_folder, peeked_source_dict, *args, **kwargs)
         source_data_paths = copy.deepcopy(source_data_paths)
         self.meta["source_data_paths"].append(source_data_paths)
         
         # User-defined data setup
+        logger.info(f"Setting up derived data in {data_dest_folder}")
         source_data_paths = copy.deepcopy(source_data_paths)
-        self.meta["derived_data_paths"].append(self._setup_data(data_dist_folder, source_data_paths, *args, **kwargs))
+        self.meta["derived_data_paths"].append(self._setup_data(data_dest_folder, source_data_paths, *args, **kwargs))
 
         # Finally, update meta
+        logger.info("Saving meta information.")
         self._save_meta()
+
+        logger.info(f"Setup complete. Current version: {self.get_version()}")
 
     # The user must implement these two methods in their subclass
     def _get(self, *args, data_paths: Dict[str, str]=None, **kwargs) -> Dict[str, Any]:
@@ -172,18 +194,26 @@ class CachedDataAPI(BaseDataAPI):
         """
         raise NotImplementedError("This method should be implemented in the subclass.")
 
-    def _setup_source(self, dist_folder: Path, peeked_sources: Dict[str, Any], *args, **kwargs) -> Dict[str, str]:
+    def _setup_source(self, dest_folder: Path, peeked_sources: Dict[str, Any], *args, **kwargs) -> Dict[str, str]:
         """
-        This method should do minimum processing on the source data and save it in the dist_folder.
+        This method should do minimum processing on the source data and save it in the dest_folder.
         It must return a dictionary with the source data paths, where the keys are the names of the sources
         and the values are the paths to the processed source data files.
+
+        :param dest_folder: Already versioned folder where the source data should be saved.
+        :param peeked_sources: A dictionary where the keys are the names of the sources
+                              and the values are some content about the state of the source data.
         """
         raise NotImplementedError
 
-    def _setup_data(self, dist_folder: Path, source_paths: Dict[str, str], *args, **kwargs) -> Dict[str, str]:
+    def _setup_data(self, dest_folder: Path, source_paths: Dict[str, str], *args, **kwargs) -> Dict[str, str]:
         """
         Loads the source data from source_paths and processes it to create derived data.
         This method should return a dictionary with the derived data paths, where the keys are the names
         of the derived data and the values are the paths to the processed derived data files.
+
+        :param dest_folder: Already versioned folder where the derived data should be saved.
+        :param source_paths: A dictionary where the keys are the names of the sources
+                             and the values are the paths to the source data files.
         """
         raise NotImplementedError

@@ -17,3 +17,5 @@ dependencies:
   - rich
   - vl-convert-python  # for altair to save to png etc
   - pytest
+  - pip
+    - fastexcel

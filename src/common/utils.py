@@ -200,10 +200,10 @@ def run_and_save_notebook_with_args(
     return output_nb_path, output_html_path
 
 
-def download_file(url, filename):
+def download_file(url, filename, headers=None):
     """Downloads a single file from a given URL."""
     try:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, headers=headers)
         response.raise_for_status()  # Raise an exception for bad status codes
         with open(filename, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -213,3 +213,11 @@ def download_file(url, filename):
     except requests.exceptions.RequestException as e:
         logger.info(f"Error downloading {url}: {e}")
         return None
+    
+
+def setup_logger_for_nb():
+    import sys
+    import logging
+
+    date_strftime_format = "%Y-%m-%y %H:%M:%S"
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s - %(levelname)s: %(message)s", datefmt=date_strftime_format)

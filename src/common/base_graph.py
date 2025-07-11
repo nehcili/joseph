@@ -35,10 +35,6 @@ class Node(object):
         Note that we return children without copying. So any manipulation will change the actual children of the node
         """
         return self._children
-    
-    @property
-    def data(self) -> dict:
-        return dict(self._data)
 
     def __call__(self, *args, **kwargs) -> "Node":
         """
