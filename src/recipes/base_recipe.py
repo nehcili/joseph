@@ -70,6 +70,14 @@ class Item(object):
             api.setup()
         cls.__API = api
 
+    def set_name(self, name: str) -> "Item":
+        """
+        Set the name of the item.
+        This is used to identify the item in the recipe.
+        """
+        self._name = name
+        return self
+
     def food_code(self):
         # FNDDS food code is unique for each food item
         return self._index_df['Food code'][0]
@@ -77,10 +85,6 @@ class Item(object):
     @property
     def name(self) -> str:
         return self._name
-    
-    def set_name(self, name: str) -> "Item":
-        self._name = name
-        return self
     
     @property
     def quantity(self) -> float:
@@ -106,7 +110,7 @@ class Item(object):
                 name=None,
                 quantity=self.quantity + other.quantity,
                 index_df=None,
-                nutrient_values_df=(self.quantity * self._df + other.quantity * other._df)/(self.quantity + other.quantity),
+                nutrient_values_df=(self.quantity * self._nutrient_values_df + other.quantity * other._nutrient_values_df)/(self.quantity + other.quantity),
             )
     
     def __radd__(self, other: "Item") -> "Item":
@@ -167,7 +171,7 @@ class ItemList(object):
 
     def __mul__(self, other: float) -> "ItemList":
         return ItemList(
-            items={ingredient * other for ingredient in self._items}
+            items={food_code: item * other for food_code, item in self._items.items()}
         )
 
     def __rmul__(self, other: float) -> "ItemList":
@@ -175,7 +179,7 @@ class ItemList(object):
     
     def add(self, new_item: Item) -> "ItemList":
         """
-        Add always adds a new copy of new_ingredient to the IngredientList.
+        Add always adds a new copy of new_item to the ItemList.
         """
         key = new_item.food_code()
 
@@ -200,6 +204,13 @@ class ItemList(object):
         return sum(
             [item.get_nutrition_info(total=True) for item in self._items.values()]
         )
+    
+    def __repr__(self):
+        max_length = 50
+
+        sorted_key = sorted(self._items.keys())
+        res = ", ".join([self._items[key].__repr__() for key in sorted_key])
+        return res[:max_length] + "..." if len(res) > max_length else res
 
 
 class Step(Node):
@@ -221,18 +232,18 @@ class Step(Node):
         Must return a dict with the following keys:
         - `item_list`: an `ItemList` object that contains all the ingredients used in this step.
         - `output`: Item object that represents the output of the step.
-        - `step_description`: list of str that describes the step. Index 0 is the first step.
+        - `step_list`: list of str that describes the step. Index 0 is the first step.
         """
         output = super().forward(*args, **kwargs)
         assert isinstance(output, dict), "The output of the forward step must be a dict."
-        assert 'item_list' in output and 'output' in output and 'step_description' in output, \
-            "The output dict must contain 'item_list', 'output', and 'step_description' keys."
+        assert 'item_list' in output and 'output' in output and 'step_list' in output, \
+            "The output dict must contain 'item_list', 'output', and 'step_list' keys."
         assert isinstance(output['item_list'], ItemList), \
             "The 'item_list' key must contain an ItemList object."
         assert isinstance(output['output'], Item), \
             "The 'output' key must contain an Item object."
-        assert isinstance(output['step_description'], str), \
-            "The 'step_description' key must contain a str."
+        assert isinstance(output['step_list'], list), \
+            "The 'step_list' key must contain a list of str descriptions."
         return output
     
 
@@ -240,8 +251,12 @@ class SourceStep(Step):
     """
     SourceStep is a step that provides the initial ingredients for the recipe.
     It is a special type of Step that does not depend on any previous steps.
+
+    Convention
+    ==========
+    - _forward returns an empty step_list. We don't want a bunch of steps that are just "Get X ingredient".
     """
-    def __init__(self, name: str):
+    def __init__(self, name: str = ""):
         super().__init__()
         self.name = name
         self._scale = 1.0  # Default scale for the source step
@@ -262,15 +277,14 @@ class SourceStep(Step):
         Must return a dict with the following keys:
         - `item_list`: an `ItemList` object that contains all the ingredients used in this step.
         - `output`: Item object that represents the output of the step.
-        - `step_description`: list of str that describes the step. Index 0 is the first step
+        - `step_list`: list of str that describes the step. Index 0 is the first step
         """
-        output = super().forward()
-        quantity = self._scale * grams
+        output = super().forward(grams=grams)
 
         # Rescale all items in the ingredient set and output by self._scale
-        output['item_list'] *= quantity
-        output['output'] *= quantity
-        output['step_description'] = output['step_description'].format(quantity=quantity)
+        output['item_list'] *= self._scale
+        output['output'] *= self._scale
+        output['step_list'] = []
 
         return output
         
@@ -297,7 +311,7 @@ class Recipe(Graph):
         """
         if not self.is_calibrated:
             logger.info(f"Calibrating recipe graph for {self.name}.")
-            root: Node = self()
+            root: Node = self.graph()
             assert isinstance(root, Node), "The output of a recipe graph must be a single Node."
             scale = 1.0 / root.forward(1)['output'].quantity
             root.backward(scale=scale)

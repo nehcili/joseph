@@ -111,7 +111,7 @@ class Node(object):
         - scaling each node (for different servings)
         - building recipe
         """
-        return None
+        pass
 
     ######################################
     # public methods to use
@@ -129,10 +129,6 @@ class Node(object):
         # if a node is a leaf.
         if self.children is None:
             return self._forward(*args, **kwargs)
-
-        # compute recursively all non leaf nodes.
-        args = []
-        kwargs = {}
 
         _invalid_msg = "Invalid argument type. Expected Node or list/tuple/dict of Nodes."
 

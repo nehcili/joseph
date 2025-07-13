@@ -8,6 +8,8 @@ import os
 from nbconvert.preprocessors import ExecutePreprocessor
 from datetime import datetime
 import requests
+import polars as pl
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -221,3 +223,12 @@ def setup_logger_for_nb():
 
     date_strftime_format = "%Y-%m-%y %H:%M:%S"
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s - %(levelname)s: %(message)s", datefmt=date_strftime_format)
+
+
+def assert_pl_df_equal(df1: pl.DataFrame, df2: pl.DataFrame, tol=1e-8):
+    assert df1.shape == df2.shape, f"Shape mismatch: {df1.shape} vs {df2.shape}"
+    for col in df1.columns:
+        assert col in df2.columns, f"Column {col} missing in second DataFrame"
+        arr1 = df1[col].to_numpy()
+        arr2 = df2[col].to_numpy()
+        assert (abs(arr1 - arr2) < tol).all(), f"Column {col} values differ: {arr1} vs {arr2}"
